@@ -21,6 +21,7 @@ import base64
 from io import BytesIO
 from PIL import Image
 import logging
+import requests
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -80,9 +81,11 @@ def home():
     דף בית
     """
     return jsonify({
-        "service": "Browser Embassy V4",
+        "service": "Browser Embassy V5 with VNC",
         "status": "operational",
-        "description": "Remote browser automation service",
+        "description": "Remote browser automation with visual control",
+        "vnc_url": "/vnc",
+        "vnc_password": "browser123",
         "endpoints": {
             "/navigate": "Navigate to URL",
             "/screenshot": "Get current page screenshot",
@@ -91,9 +94,113 @@ def home():
             "/click": "Click an element",
             "/get_html": "Get page HTML",
             "/execute_js": "Execute JavaScript",
-            "/status": "Browser status"
+            "/status": "Browser status",
+            "/vnc": "noVNC web interface (visual browser control)"
         }
     })
+
+
+@app.route('/vnc')
+def vnc_page():
+    """
+    דף גישה ל-noVNC דרך iframe
+    """
+    return '''
+    <!DOCTYPE html>
+    <html dir="rtl" lang="he">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Browser Embassy - VNC Access</title>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: Arial, sans-serif;
+                background: #1a1a2e;
+                color: white;
+                overflow: hidden;
+            }
+            .header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                padding: 15px 30px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            }
+            .header h1 {
+                font-size: 1.5em;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .status {
+                background: rgba(76, 175, 80, 0.2);
+                padding: 8px 16px;
+                border-radius: 20px;
+                font-size: 0.9em;
+            }
+            .status::before {
+                content: "●";
+                color: #4CAF50;
+                margin-left: 8px;
+                animation: pulse 2s infinite;
+            }
+            @keyframes pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.5; }
+            }
+            .vnc-container {
+                width: 100vw;
+                height: calc(100vh - 70px);
+                background: #000;
+            }
+            iframe {
+                width: 100%;
+                height: 100%;
+                border: none;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>🖥️ Browser Embassy - VNC Console</h1>
+            <div class="status">מחובר</div>
+        </div>
+        <div class="vnc-container">
+            <iframe src="/novnc/" allow="clipboard-read; clipboard-write"></iframe>
+        </div>
+    </body>
+    </html>
+    '''
+
+@app.route('/novnc/')
+@app.route('/novnc/<path:path>')
+def novnc_proxy(path=''):
+    """
+    Proxy ל-noVNC דרך Flask
+    """
+    novnc_url = f'http://localhost:6080/{path}'
+    
+    try:
+        # העבר את הבקשה ל-noVNC
+        resp = requests.get(
+            novnc_url,
+            headers={k: v for k, v in request.headers if k.lower() != 'host'},
+            stream=True,
+            timeout=30
+        )
+        
+        # החזר את התשובה
+        from flask import Response
+        return Response(
+            resp.iter_content(chunk_size=8192),
+            content_type=resp.headers.get('content-type', 'text/html'),
+            status=resp.status_code
+        )
+    except Exception as e:
+        logger.error(f"noVNC proxy error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/status')

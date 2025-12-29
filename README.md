@@ -1,6 +1,6 @@
 ---
-title: Browser Embassy V4
-emoji: 🌐
+title: Browser Embassy V5 with VNC
+emoji: 🖥️
 colorFrom: blue
 colorTo: purple
 sdk: docker
@@ -8,20 +8,36 @@ pinned: false
 app_port: 7860
 ---
 
-# 🌐 Browser Embassy V4 - Remote Browser Service
+# 🖥️ Browser Embassy V5 - Remote Browser with Visual Control
 
-דפדפן מלא עם Selenium שרץ בענן, ללא חסימות NetFree!
+דפדפן מלא עם Selenium **+ noVNC** שרץ בענן - שליטה ויזואלית בדפדפן בזמן אמת!
 
 ## ✨ Features
 
 - 🚀 **Full Chrome Browser** - Selenium WebDriver
 - 🔓 **No NetFree Blocking** - Running in the cloud
+- 🖥️ **Visual Control** - noVNC web interface (NEW!)
 - 📸 **Screenshots** - Get visual feedback
 - 📝 **Form Automation** - Fill fields automatically
 - 🎯 **Oracle Cloud Support** - Built-in Oracle login automation
 - 🔌 **REST API** - Easy integration
 
+## 🌐 Visual Access (NEW!)
+
+Access the live browser through noVNC:
+- **URL**: `https://your-space.hf.space/vnc`
+- **noVNC Direct**: Port 6080
+- **Password**: `browser123`
+- **Resolution**: 1920x1080
+
+See the browser in real-time, control with mouse & keyboard!
+
 ## 🎯 API Endpoints
+
+### `/vnc` - noVNC Visual Interface
+```bash
+GET /vnc
+```
 
 ### `/status` - Get browser status
 ```bash
