@@ -491,6 +491,289 @@ def oracle_login():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/create_anthropic_key', methods=['POST'])
+def create_anthropic_key():
+    """
+    🔑 יצירת API Key אוטומטית ב-Anthropic Console
+    
+    תהליך אוטומטי מלא:
+    1. וודא שהדפדפן ב-Anthropic Console
+    2. לחץ על "Create Key"
+    3. מלא שם (אופציונלי)
+    4. לחץ "Create"
+    5. חלץ את ה-Key
+    6. החזר את ה-Key
+    
+    Body (אופציונלי):
+        {
+            "key_name": "My API Key"  // אופציונלי, ברירת מחדל: "Auto-generated Key"
+        }
+    
+    Returns:
+        {
+            "success": true,
+            "api_key": "sk-ant-api03-...",
+            "key_name": "My API Key"
+        }
+    """
+    global driver
+    
+    if driver is None:
+        driver = init_browser()
+    
+    data = request.json or {}
+    key_name = data.get('key_name', f'Auto-generated Key {time.strftime("%Y%m%d_%H%M%S")}')
+    
+    try:
+        logger.info("🔑 Starting Anthropic Key creation automation...")
+        
+        # וודא שאנחנו בדף הנכון
+        current_url = driver.current_url
+        if 'console.anthropic.com' not in current_url:
+            logger.info("Navigating to Anthropic Console...")
+            driver.get('https://console.anthropic.com/settings/keys')
+            time.sleep(5)
+        
+        # צלם מסך התחלתי
+        logger.info("📸 Taking initial screenshot...")
+        screenshot_before = driver.get_screenshot_as_png()
+        screenshot_before_b64 = base64.b64encode(screenshot_before).decode('utf-8')
+        
+        # חפש כפתור "Create Key" או דומה
+        logger.info("🔍 Looking for 'Create Key' button...")
+        
+        # ניסיונות שונים למצוא את הכפתור
+        button_selectors = [
+            'button:has-text("Create Key")',
+            'button:has-text("New Key")',
+            'button[aria-label*="Create"]',
+            'button[aria-label*="New"]',
+            'a:has-text("Create Key")',
+            'button.create-key',
+            'button[data-test="create-key"]',
+            # Fallback: כל כפתור שמכיל "create" או "key"
+            '//button[contains(translate(text(), "CREATE", "create"), "create")]',
+            '//button[contains(translate(text(), "KEY", "key"), "key")]',
+        ]
+        
+        create_button = None
+        for selector in button_selectors:
+            try:
+                if selector.startswith('//'):
+                    # XPath
+                    create_button = driver.find_element(By.XPATH, selector)
+                else:
+                    # CSS
+                    create_button = driver.find_element(By.CSS_SELECTOR, selector)
+                
+                if create_button:
+                    logger.info(f"✅ Found button with selector: {selector}")
+                    break
+            except:
+                continue
+        
+        if not create_button:
+            # אם לא מצאנו, נסה JavaScript
+            logger.info("Trying JavaScript fallback...")
+            script = """
+            const buttons = Array.from(document.querySelectorAll('button, a'));
+            const createBtn = buttons.find(btn => 
+                btn.textContent.toLowerCase().includes('create') &&
+                (btn.textContent.toLowerCase().includes('key') || btn.textContent.toLowerCase().includes('api'))
+            );
+            if (createBtn) {
+                createBtn.scrollIntoView();
+                return true;
+            }
+            return false;
+            """
+            found = driver.execute_script(script)
+            if found:
+                logger.info("✅ Found button via JavaScript")
+            else:
+                # אם עדיין לא מצאנו - החזר screenshot וטקסט הדף
+                logger.warning("⚠️ Could not find Create Key button")
+                page_text = driver.execute_script("return document.body.innerText;")
+                
+                return jsonify({
+                    "success": False,
+                    "error": "Could not find 'Create Key' button",
+                    "page_text_preview": page_text[:500],
+                    "screenshot": screenshot_before_b64,
+                    "current_url": driver.current_url,
+                    "suggestion": "Please check if you need to login first or if the page structure changed"
+                }), 404
+        
+        # לחץ על הכפתור
+        logger.info("🖱️ Clicking 'Create Key' button...")
+        if create_button:
+            create_button.click()
+        else:
+            # JavaScript click
+            driver.execute_script("""
+                const buttons = Array.from(document.querySelectorAll('button, a'));
+                const createBtn = buttons.find(btn => 
+                    btn.textContent.toLowerCase().includes('create') &&
+                    (btn.textContent.toLowerCase().includes('key') || btn.textContent.toLowerCase().includes('api'))
+                );
+                if (createBtn) createBtn.click();
+            """)
+        
+        time.sleep(3)
+        
+        # חפש שדה שם (אם קיים)
+        logger.info("🔍 Looking for name field...")
+        try:
+            name_field = WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'input[type="text"], input[placeholder*="name" i], input[name*="name" i]'))
+            )
+            name_field.clear()
+            name_field.send_keys(key_name)
+            logger.info(f"✅ Filled key name: {key_name}")
+            time.sleep(1)
+        except Exception as e:
+            logger.info(f"No name field found (might not be required): {e}")
+        
+        # חפש כפתור אישור (Create/Confirm/Submit)
+        logger.info("🔍 Looking for confirmation button...")
+        confirm_selectors = [
+            'button:has-text("Create")',
+            'button:has-text("Confirm")',
+            'button:has-text("Submit")',
+            'button[type="submit"]',
+            'button.primary',
+            '//button[contains(translate(text(), "CREATE", "create"), "create")]',
+            '//button[contains(translate(text(), "CONFIRM", "confirm"), "confirm")]',
+        ]
+        
+        confirm_button = None
+        for selector in confirm_selectors:
+            try:
+                if selector.startswith('//'):
+                    confirm_button = driver.find_element(By.XPATH, selector)
+                else:
+                    confirm_button = driver.find_element(By.CSS_SELECTOR, selector)
+                
+                if confirm_button and confirm_button != create_button:  # וודא שזה לא אותו כפתור
+                    logger.info(f"✅ Found confirm button: {selector}")
+                    break
+            except:
+                continue
+        
+        if confirm_button:
+            confirm_button.click()
+            logger.info("✅ Clicked confirmation button")
+        else:
+            # JavaScript fallback
+            driver.execute_script("""
+                const buttons = Array.from(document.querySelectorAll('button'));
+                const confirmBtn = buttons.find(btn => 
+                    (btn.textContent.toLowerCase().includes('create') ||
+                     btn.textContent.toLowerCase().includes('confirm') ||
+                     btn.type === 'submit') &&
+                    btn.offsetParent !== null  // visible
+                );
+                if (confirmBtn) confirmBtn.click();
+            """)
+        
+        time.sleep(3)
+        
+        # חפש את ה-Key שנוצר
+        logger.info("🔍 Extracting API Key...")
+        
+        # JavaScript לחיפוש Key (מחפש מחרוזת שמתחילה ב-sk-ant-)
+        extract_script = """
+        // חפש בכל הטקסטים בדף
+        const allText = document.body.innerText;
+        const keyMatch = allText.match(/sk-ant-[a-zA-Z0-9_-]{95,}/);
+        if (keyMatch) return keyMatch[0];
+        
+        // חפש בשדות input/textarea
+        const inputs = document.querySelectorAll('input[type="text"], input[readonly], textarea[readonly], code, pre');
+        for (const input of inputs) {
+            const value = input.value || input.textContent || input.innerText;
+            if (value && value.startsWith('sk-ant-')) {
+                return value.trim();
+            }
+        }
+        
+        // חפש elements עם data attributes
+        const elements = document.querySelectorAll('[data-key], [data-api-key], [data-value]');
+        for (const el of elements) {
+            for (const attr of el.attributes) {
+                if (attr.value && attr.value.startsWith('sk-ant-')) {
+                    return attr.value.trim();
+                }
+            }
+        }
+        
+        return null;
+        """
+        
+        api_key = driver.execute_script(extract_script)
+        
+        # צלם מסך סופי
+        screenshot_after = driver.get_screenshot_as_png()
+        screenshot_after_b64 = base64.b64encode(screenshot_after).decode('utf-8')
+        
+        if api_key:
+            logger.info(f"✅ Successfully extracted API Key: {api_key[:20]}...")
+            
+            return jsonify({
+                "success": True,
+                "api_key": api_key,
+                "key_name": key_name,
+                "screenshot_before": screenshot_before_b64,
+                "screenshot_after": screenshot_after_b64,
+                "current_url": driver.current_url
+            })
+        else:
+            # אם לא הצלחנו לחלץ - החזר מידע לבאג דיבוג
+            logger.warning("⚠️ Could not extract API Key")
+            page_html = driver.page_source
+            
+            return jsonify({
+                "success": False,
+                "error": "Could not extract API Key from page",
+                "screenshot": screenshot_after_b64,
+                "current_url": driver.current_url,
+                "page_html_length": len(page_html),
+                "suggestion": "Check screenshot to see if key was created. Might need manual extraction."
+            }), 404
+    
+    except Exception as e:
+        logger.error(f"❌ Anthropic Key creation error: {e}")
+        
+        # צלם מסך של השגיאה
+        try:
+            screenshot_error = driver.get_screenshot_as_png()
+            screenshot_error_b64 = base64.b64encode(screenshot_error).decode('utf-8')
+        except:
+            screenshot_error_b64 = None
+        
+        return jsonify({
+            "error": str(e),
+            "screenshot": screenshot_error_b64,
+            "current_url": driver.current_url if driver else None
+        }), 500
+
+
+@app.route('/api/health', methods=['GET'])
+def health():
+    """
+    בדיקת בריאות ה-API
+    """
+    global driver
+    
+    return jsonify({
+        "status": "healthy",
+        "browser_initialized": driver is not None,
+        "browser_ready": driver is not None,
+        "current_url": driver.current_url if driver else None,
+        "timestamp": time.time()
+    })
+
+
 if __name__ == '__main__':
     # אתחל דפדפן בהתחלה
     init_browser()
